@@ -12,65 +12,76 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <vector>
+#include <iostream>
+#include <filesystem>
 #include <sys/stat.h>
 #include <cstring>
+
+namespace fs = std::filesystem;
 
 /* globale Variable fuer den Programmnamen */
 char *program_name = nullptr;
 
 /* Funktion print_usage() zur Ausgabe der usage Meldung */
-void print_usage() {
+void print_usage()
+{
     fprintf(stderr, "Usage: %s [-R] [-i] searchPath filename1 [filename2] ... [filenameN]\n", program_name);
     exit(EXIT_FAILURE);
 }
 
-char *getCWD() {
-    long maxpath;
-    char *mycwdp;
-
-    if ((maxpath = pathconf(".", _PC_PATH_MAX)) == -1) {
-        perror("Failed to determine the pathname length");
-    }
-    if ((mycwdp = (char *) malloc(maxpath)) == nullptr) {
-        perror("Failed to allocate space for pathname");
-    }
-    if (getcwd(mycwdp, maxpath) == nullptr) {
-        perror("Failed to get current working directory");
-    }
-    return mycwdp;
-}
-
-int is_regular_file(const char *path)
+bool checkFilename(fs::directory_entry dir_entry, char *filename)
 {
-    struct stat path_stat{};
-    stat(path, &path_stat);
-    return S_ISREG(path_stat.st_mode);
-}
-
-char* searchForFilename(DIR *dir, char* filename)
-{
-    struct dirent *elem;   // pointer represent directory stream
-    while ((elem = readdir(dir)) != nullptr) {
-        char filepath[PATH_MAX + 1];
-        realpath(elem->d_name, filepath);
-        if (is_regular_file(filepath) && (strcmp(elem->d_name, filename) == 0))
+    std::string path = dir_entry.path();
+    std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
+    if (dir_entry.is_directory())
+    {
+        //printf("Dir: %s\n", base_filename.c_str());
+    }
+    else
+    {
+        if (strcmp(base_filename.c_str(), filename) == 0)
         {
-            printf("File found: %s\n", elem->d_name);
-            return filepath;
-        }
-        else if (is_regular_file(filepath))
-        {
-            printf("File: %s\n", elem->d_name);
+            //printf("File found: %s\n", base_filename.c_str());
+            return true;
         }
         else
         {
-            printf("Dir: %s\n", elem->d_name);
+            //printf("File: %s\n", base_filename.c_str());
         }
     }
+    return false;
+}
+
+void searchForFilename(char *searchPath, char *filename, int recursive, int caseSensitive)
+{
+    std::string foundPath = "";
+    if (recursive)
+    {
+        for (auto &dir_entry : fs::recursive_directory_iterator(searchPath))
+        {
+            if (checkFilename(dir_entry, filename))
+            {
+                foundPath = dir_entry.path();
+            }
+        }
+    }
+    else
+    {
+        for (auto const &dir_entry : std::filesystem::directory_iterator{searchPath})
+        {
+            if (checkFilename(dir_entry, filename))
+            {
+                foundPath = dir_entry.path();
+            }
+        }
+    }
+    if (foundPath.compare(""))
+        printf("Found path: %s\n", foundPath.c_str());  
 }
 
 /* main Funktion mit Argumentbehandlung */
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
     /*
      * DEFINITIONEN
@@ -81,37 +92,37 @@ int main(int argc, char *argv[]) {
     int caseSensitive = 0;
     int recursive = 0;
     char *searchPath = nullptr;
-    char *mycwd = nullptr;
     std::vector<char *> filenames = {};
     program_name = argv[0];
-
 
     /*
      * ARGS
      */
-    while ((c = getopt(argc, argv, "iR")) != EOF) {
-        switch (c) {
-            case 'R':
-                if (recursive) /* mehrmalige Verwendung? */
-                {
-                    error = 1;
-                    break;
-                }
-                recursive = 1;
-                break;
-            case 'i':
-                if (caseSensitive) /* mehrmalige Verwendung? */
-                {
-                    error = 1;
-                    break;
-                }
-                caseSensitive = 1;
-                break;
-            case '?': /* ungueltiges Argument */
+    while ((c = getopt(argc, argv, "iR")) != EOF)
+    {
+        switch (c)
+        {
+        case 'R':
+            if (recursive) /* mehrmalige Verwendung? */
+            {
                 error = 1;
                 break;
-            default: /* unmoegliech */
-                assert(0);
+            }
+            recursive = 1;
+            break;
+        case 'i':
+            if (caseSensitive) /* mehrmalige Verwendung? */
+            {
+                error = 1;
+                break;
+            }
+            caseSensitive = 1;
+            break;
+        case '?': /* ungueltiges Argument */
+            error = 1;
+            break;
+        default: /* unmoegliech */
+            assert(0);
         }
     }
 
@@ -123,22 +134,20 @@ int main(int argc, char *argv[]) {
     /* Die restlichen Argumente, die keine Optionen sind, befinden sich in
      * argv[optind] bis argv[argc-1]
      */
-    while (optind < argc) {
-        if (searchPath == nullptr) {
+    while (optind < argc)
+    {
+        if (searchPath == nullptr)
+        {
             searchPath = argv[optind];
-        } else {
+        }
+        else
+        {
             filenames.push_back(argv[optind]);
         }
         optind++;
     }
 
-    //Change to directory
-    mycwd = getCWD();
-    DIR *dir;
-    if ((dir = opendir(searchPath)) != nullptr) {      // check if directory  open
-        chdir(searchPath);
+    searchForFilename(searchPath, filenames.at(0), recursive, caseSensitive);
 
-    }
-    closedir(dir); //close directory.
     return EXIT_SUCCESS;
 }
