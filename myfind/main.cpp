@@ -47,60 +47,47 @@ void print_usage()
 
 /*
  * Function checkFilename for checking, if a given dir entry is the searched file
- * @param dir_entry: directory entry, which should be checked
+ * @param dirEntry: directory entry, which should be checked
  * @param filename: name of the file searched for
  * @param caseSensitive: whether the namecheck shoould be casesensitive or not
  * 
  * @return whether the directory entry is the one searched for or not 
  */
-bool checkFilename(fs::directory_entry dir_entry, char *filename, int caseSensitive)
+bool checkFilename(fs::directory_entry dirEntry, char *filename, int caseSensitive)
 {
-    std::string path = dir_entry.path();
+    std::string path = dirEntry.path();
     std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
-    if (dir_entry.is_directory())
-    {
-        //printf("Dir: %s\n", base_filename.c_str());
-    }
-    else
-    {
-        if ((!caseSensitive && (strcasecmp(base_filename.c_str(), filename) == 0)) || (caseSensitive && (strcmp(base_filename.c_str(), filename) == 0)))
-        {
-            //printf("File found: %s\n", base_filename.c_str());
+        if ((!dirEntry.is_directory()) 
+            && ((!caseSensitive && (strcasecmp(base_filename.c_str(), filename) == 0)) || (caseSensitive && (strcmp(base_filename.c_str(), filename) == 0))))
             return true;
-        }
-        else
-        {
-            //printf("File: %s\n", base_filename.c_str());
-        }
-    }
     return false;
 }
 
-void searchForFilename(char *searchPath, char *filename, int recursive, int caseSensitive)
+void searchForFilename(char *searchPath, char *filename, int recursive, int caseSensitive, char *returnPath)
 {
-    std::string foundPath = "";
+    std::string foundPath = "not found";
     if (recursive)
     {
-        for (auto &dir_entry : fs::recursive_directory_iterator(searchPath))
+        for (auto &dirEntry : fs::recursive_directory_iterator(searchPath))
         {
-            if (checkFilename(dir_entry, filename, caseSensitive))
-            {
-                foundPath = dir_entry.path();
-            }
+            if (checkFilename(dirEntry, filename, caseSensitive))
+                foundPath = fs::absolute(dirEntry.path());
         }
     }
     else
     {
-        for (auto const &dir_entry : std::filesystem::directory_iterator{searchPath})
+        for (auto const &dirEntry : fs::directory_iterator{searchPath})
         {
-            if (checkFilename(dir_entry, filename, caseSensitive))
-            {
-                foundPath = dir_entry.path();
-            }
+            if (checkFilename(dirEntry, filename, caseSensitive))
+                foundPath = fs::absolute(dirEntry.path());
         }
     }
-    if (foundPath.compare(""))
-        printf("Found path: %s\n", foundPath.c_str());
+
+    for (size_t i = 0; i < foundPath.length(); i++)
+    {
+        returnPath[i] = foundPath[i];
+    }
+    returnPath[foundPath.length()] = '\0';
 }
 
 /* main Funktion with argument handling */
@@ -116,6 +103,7 @@ int main(int argc, char *argv[])
     int status = 0;                       //Processstatus
     int msg_id = -1;                      //ID of Message Queue
     message_t msg;                        //Messagebuffer
+    char filepath[MAX_DATA];              //Path to file
     int error = 0;                        //Is used for error handling during argument handling
     int caseSensitive = 0;                //Commandline-Argument case sensitive
     int recursive = 0;                    //Commandline-Argument recursive
@@ -182,20 +170,20 @@ int main(int argc, char *argv[])
         fprintf(stderr, "%s: Can't access message queue\n", argv[0]);
         return EXIT_FAILURE;
     }
-    printf("Message Queue created!\n");
 
     for (size_t i = 0; i < filenames.size(); i++)
     {
         pid = fork();
         if (pid == pid_t(0))
         {
-            // Child process
-            sleep(5);
+            // Search for filename
+            searchForFilename(searchPath, filenames.at(i), recursive, caseSensitive, filepath);
+
             //Send message
             msg.mType = 1;
             msg.mId = getpid();
             strncpy(msg.mFilename, filenames.at(i), MAX_DATA);
-            strncpy(msg.mPath, "Test", MAX_DATA);
+            strncpy(msg.mPath, filepath, MAX_DATA);
             if (msgsnd(msg_id, &msg, sizeof(msg) - sizeof(long), 0) == -1)
             {
                 /* error handling */
@@ -215,10 +203,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    while ((wpid = wait(&status)) > 0)
-        ; // parent waits for all the child processes to end
-
-    while (1)
+    while (messages.size() < filenames.size()) //wait for every child process to send a message
     {
         if (msgrcv(msg_id, &msg, sizeof(msg) - sizeof(long), 0, 0) == -1)
         {
@@ -226,13 +211,15 @@ int main(int argc, char *argv[])
             fprintf(stderr, "%s: Can't receive from message queue\n", argv[0]);
             return EXIT_FAILURE;
         }
-        printf("%ld: %s: %s\n", (long)msg.mId, msg.mFilename, msg.mPath);
+        messages.push_back(msg);
     }
 
     msgctl(msg_id, IPC_RMID, NULL); //destroy the message queue
-    printf("Message Queue deleted!\n");
 
-    //searchForFilename(searchPath, filenames.at(0), recursive, caseSensitive);
+    for (auto message : messages)
+    {
+        printf("%ld: %s: %s\n", (long)message.mId, message.mFilename, message.mPath);
+    }
 
     return EXIT_SUCCESS;
 }
