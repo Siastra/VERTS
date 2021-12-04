@@ -170,15 +170,6 @@ void *clientCommunication(void *data)
    int size;
    int *current_socket = (int *)data;
 
-   ////////////////////////////////////////////////////////////////////////////
-   // SEND welcome message
-   strcpy(buffer, "Welcome to myserver!\r\nPlease enter your commands...\r\n");
-   if (send(*current_socket, buffer, strlen(buffer), 0) == -1)
-   {
-      perror("send failed");
-      return NULL;
-   }
-
    do
    {
       /////////////////////////////////////////////////////////////////////////
@@ -216,7 +207,7 @@ void *clientCommunication(void *data)
       buffer[size] = '\0';
       printf("Message received: %s\n", buffer); // ignore error
 
-      if (send(*current_socket, "OK", 3, 0) == -1)
+      if (send(*current_socket, "ERR\n", 3, 0) == -1)
       {
          perror("send answer failed");
          return NULL;

@@ -6,9 +6,11 @@
 #include <string>
 
 #include "libraries/CLI/CLI.hpp"
-#include "libraries/spdlog/spdlog.h"
+#include "utility/socketUtils.hpp"
+
 
 #define BUFFER_SIZE 1024
+
 
 int connect(const char *address, int port)
 {
@@ -33,8 +35,33 @@ int connect(const char *address, int port)
         return EXIT_FAILURE;
     }
 
-    spdlog::info("Connection with server {} established", inet_ntoa(socketAddress.sin_addr));
+    spdlog::debug("Connection with server {} established", inet_ntoa(socketAddress.sin_addr));
     return socketFileDescriptor;
+}
+
+std::string receiveResponse(int socketFileDescriptor) {
+    std::string response = readAll(socketFileDescriptor, BUFFER_SIZE);
+    if (response.empty()) { // The server should always at least send OK or ERR
+        std::cerr << "Server closed the connection!\n";
+        exit(EXIT_FAILURE);
+    }
+    return response;
+}
+
+void deleteMessage(int socketFileDescriptor)
+{
+    std::cout << "Message ID: ";
+    std::string messageId;
+    getline(std::cin, messageId);
+    writeAll(socketFileDescriptor, std::string("DEL\n").append(messageId).append("\n"));
+    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+    {
+        std::cout << "Message deleted successfully!\n";
+    }
+    else
+    {
+        std::cout << "There was an error deleting the message.\n";
+    }
 }
 
 int main(int argc, char const *argv[])
@@ -65,26 +92,27 @@ int main(int argc, char const *argv[])
         std::cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
         std::cout << ">>";
         std::cin >> selection;
+        std::cin.ignore(INT_MAX, '\n');
         switch (selection)
         {
         case 1:
-            spdlog::info("SEND to be implemented...");
+            std::cout << "SEND to be implemented...\n";
             break;
         case 2:
-            spdlog::info("READ to be implemented...");
+            std::cout << "READ to be implemented...\n";
             break;
         case 3:
-            spdlog::info("LIST to be implemented...");
+            std::cout << "LIST to be implemented...\n";
             break;
         case 4:
-            spdlog::info("DEL to be implemented...");
+            deleteMessage(socketFileDescriptor);
             break;
         case 5:
-            spdlog::info("Quitting application...");
+            std::cout << "Quitting application...\n";
             abort = true;
             break;
         default:
-            spdlog::warn("Unknown argument!");
+            std::cerr << "Unknown argument!\n";
             break;
         }
     }
