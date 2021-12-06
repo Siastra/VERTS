@@ -198,6 +198,7 @@ int main(int argc, char const *argv[])
             deleteMessage(socketFileDescriptor);
             break;
         case 5:
+            socketUtility::writeAll(socketFileDescriptor, string("QUIT\n"));
             cout << "Quitting application...\n";
             abort = true;
             break;
