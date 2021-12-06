@@ -12,6 +12,8 @@
 
 #define BUFFER_SIZE 1024
 
+using namespace std;
+
 int connect(const char *address, int port)
 {
     auto socketFileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -39,12 +41,12 @@ int connect(const char *address, int port)
     return socketFileDescriptor;
 }
 
-std::string receiveResponse(int socketFileDescriptor)
+string receiveResponse(int socketFileDescriptor)
 {
-    std::string response = socketUtility::readAll(socketFileDescriptor, BUFFER_SIZE);
+    string response = socketUtility::readAll(socketFileDescriptor, BUFFER_SIZE);
     if (response.empty())
     { // The server has to send OK or ERR
-        std::cerr << "Server closed the connection!\n";
+        cerr << "Server closed the connection!\n";
         exit(EXIT_FAILURE);
     }
     return response;
@@ -53,64 +55,107 @@ std::string receiveResponse(int socketFileDescriptor)
 int readNumericValue()
 {
     int value;
-    while (!(std::cin >> value)) // read line until numeric value is entered
+    while (!(cin >> value)) // read line until numeric value is entered
     {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        std::cout << "Invalid input. Try again: ";
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+        cout << "Invalid input. Try again: ";
     }
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // ignore everything after numeric value
+    cin.ignore(numeric_limits<streamsize>::max(), '\n'); // ignore everything after numeric value
     return value;
+}
+
+string readUsername()
+{
+    string username = "";
+    getline(cin, username);
+
+    while (!stringUtility::checkUsername(username))
+    {
+        cout << "Please enter a valid username(only lower case letters and digits, max. 8 chars): ";
+        getline(cin, username);
+    }
+    return username;
 }
 
 void sendMessage(int socketFileDescriptor)
 {
-    
+    string sender, receiver, subject, content, line;
+    cout << "Sender: ";
+    sender = readUsername();
+    cout << "Receiver: ";
+    receiver = readUsername();
+    cout << "Subject(max. 80 characters): ";
+    getline(cin, subject);
+    cout << "Message-Content(ends with dot): " << endl;
+    while (line != ".")
+    {
+        cout << ">>";
+        getline(cin, line);
+        content.append(line).append("\n");
+    }
+    socketUtility::writeAll(socketFileDescriptor, string("SEND\n").append(sender).append("\n").append(receiver).append("\n").append(subject).append("\n").append(content));
+    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK) {
+        cout << "Message sent successfully!\n";
+    } else {
+        cout << "There occured an error sending the message.\n";
+    }
+}
+
+void readMessage(int socketFileDescriptor)
+{
+    cout << "Please enter your username: ";
+    string username = readUsername();
+    cout << "Message ID: ";
+    string messageId = to_string(readNumericValue());
+
+    socketUtility::writeAll(socketFileDescriptor, string("READ\n").append(username).append("\n").append(messageId).append("\n"));
+    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+    {
+        cout << "Message read successfully!\n";
+    }
+    else
+    {
+        cerr << "There was an error retrieving the message.\n";
+    }
 }
 
 void listMessages(int socketFileDescriptor)
 {
-    std::cout << "Please enter your username: ";
-    std::string username = "";
-    getline(std::cin, username);
+    cout << "Please enter your username: ";
+    string username = readUsername();
 
-    while (!stringUtility::checkUsername(username))
-    {
-        std::cout << "Please enter a valid username(only lower case letters and digits): ";
-        getline(std::cin, username);
-    }
-
-    socketUtility::writeAll(socketFileDescriptor, std::string("LIST\n").append(username).append("\n"));
+    socketUtility::writeAll(socketFileDescriptor, string("LIST\n").append(username).append("\n"));
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
-        std::cout << "Message deleted successfully!\n";
+        cout << "Message deleted successfully!\n";
     }
     else
     {
-        std::cerr << "There was an error retrieving the list of messages.\n";
+        cerr << "There was an error retrieving the list of messages.\n";
     }
 }
 
 void deleteMessage(int socketFileDescriptor)
 {
-    std::cout << "Message ID: ";
+    cout << "Message ID: ";
     int messageId;
     messageId = readNumericValue();
-    socketUtility::writeAll(socketFileDescriptor, std::string("DEL\n").append(std::to_string(messageId)).append("\n"));
+    socketUtility::writeAll(socketFileDescriptor, string("DEL\n").append(to_string(messageId)).append("\n"));
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
-        std::cout << "Message deleted successfully!\n";
+        cout << "Message deleted successfully!\n";
     }
     else
     {
-        std::cerr << "There was an error deleting the message.\n";
+        cerr << "There was an error deleting the message.\n";
     }
 }
 
 int main(int argc, char const *argv[])
 {
     CLI::App app{"TW-Mailer Client"};
-    std::string address{"127.0.0.1"};
+    string address{"127.0.0.1"};
     int port = {8080};
     bool debug{false};
     int socketFileDescriptor;
@@ -125,7 +170,7 @@ int main(int argc, char const *argv[])
     if (debug)
         spdlog::set_level(spdlog::level::debug);
 
-    spdlog::debug("IP address: {}, Port: {}", address, std::to_string(port));
+    spdlog::debug("IP address: {}, Port: {}", address, to_string(port));
 
     socketFileDescriptor = connect(address.c_str(), port);
 
@@ -133,18 +178,18 @@ int main(int argc, char const *argv[])
     while (!abort)
     {
         // Input action
-        std::cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
-        std::cout << ">>";
+        cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
+        cout << ">>";
         selection = readNumericValue();
 
         // Respective action is executed
         switch (selection)
         {
         case 1:
-            std::cout << "SEND to be implemented...\n";
+            sendMessage(socketFileDescriptor);
             break;
         case 2:
-            std::cout << "READ to be implemented...\n";
+            readMessage(socketFileDescriptor);
             break;
         case 3:
             listMessages(socketFileDescriptor);
@@ -153,11 +198,11 @@ int main(int argc, char const *argv[])
             deleteMessage(socketFileDescriptor);
             break;
         case 5:
-            std::cout << "Quitting application...\n";
+            cout << "Quitting application...\n";
             abort = true;
             break;
         default:
-            std::cerr << "Unknown argument!\n";
+            cerr << "Unknown argument!\n";
             break;
         }
     }
