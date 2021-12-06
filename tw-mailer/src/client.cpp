@@ -4,13 +4,13 @@
 
 #include <iostream>
 #include <string>
+#include <limits>
 
 #include "libraries/CLI/CLI.hpp"
 #include "utility/socketUtils.hpp"
-
+#include "utility/stringUtils.hpp"
 
 #define BUFFER_SIZE 1024
-
 
 int connect(const char *address, int port)
 {
@@ -25,8 +25,8 @@ int connect(const char *address, int port)
 
     memset(&socketAddress, 0, sizeof(socketAddress)); // init storage with 0
     socketAddress.sin_family = AF_INET;               // IPv4
-    socketAddress.sin_port = htons(port);             //Port
-    inet_aton(address, &socketAddress.sin_addr);      //IPv4-address
+    socketAddress.sin_port = htons(port);             // Port
+    inet_aton(address, &socketAddress.sin_addr);      // IPv4-address
 
     if (connect(socketFileDescriptor, (struct sockaddr *)&socketAddress, sizeof(socketAddress)) != 0)
     {
@@ -39,28 +39,71 @@ int connect(const char *address, int port)
     return socketFileDescriptor;
 }
 
-std::string receiveResponse(int socketFileDescriptor) {
-    std::string response = readAll(socketFileDescriptor, BUFFER_SIZE);
-    if (response.empty()) { // The server has to send OK or ERR
+std::string receiveResponse(int socketFileDescriptor)
+{
+    std::string response = socketUtility::readAll(socketFileDescriptor, BUFFER_SIZE);
+    if (response.empty())
+    { // The server has to send OK or ERR
         std::cerr << "Server closed the connection!\n";
         exit(EXIT_FAILURE);
     }
     return response;
 }
 
-void deleteMessage(int socketFileDescriptor)
+int readNumericValue()
 {
-    std::cout << "Message ID: ";
-    std::string messageId;
-    getline(std::cin, messageId);
-    writeAll(socketFileDescriptor, std::string("DEL\n").append(messageId).append("\n"));
+    int value;
+    while (!(std::cin >> value)) // read line until numeric value is entered
+    {
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cout << "Invalid input. Try again: ";
+    }
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // ignore everything after numeric value
+    return value;
+}
+
+void sendMessage(int socketFileDescriptor)
+{
+    
+}
+
+void listMessages(int socketFileDescriptor)
+{
+    std::cout << "Please enter your username: ";
+    std::string username = "";
+    getline(std::cin, username);
+
+    while (!stringUtility::checkUsername(username))
+    {
+        std::cout << "Please enter a valid username(only lower case letters and digits): ";
+        getline(std::cin, username);
+    }
+
+    socketUtility::writeAll(socketFileDescriptor, std::string("LIST\n").append(username).append("\n"));
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
         std::cout << "Message deleted successfully!\n";
     }
     else
     {
-        std::cout << "There was an error deleting the message.\n";
+        std::cerr << "There was an error retrieving the list of messages.\n";
+    }
+}
+
+void deleteMessage(int socketFileDescriptor)
+{
+    std::cout << "Message ID: ";
+    int messageId;
+    messageId = readNumericValue();
+    socketUtility::writeAll(socketFileDescriptor, std::string("DEL\n").append(std::to_string(messageId)).append("\n"));
+    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+    {
+        std::cout << "Message deleted successfully!\n";
+    }
+    else
+    {
+        std::cerr << "There was an error deleting the message.\n";
     }
 }
 
@@ -89,13 +132,12 @@ int main(int argc, char const *argv[])
     int selection = 0;
     while (!abort)
     {
-        //Input action
+        // Input action
         std::cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
         std::cout << ">>";
-        std::cin >> selection;
-        std::cin.ignore(INT_MAX, '\n');
+        selection = readNumericValue();
 
-        //Respective action is executed
+        // Respective action is executed
         switch (selection)
         {
         case 1:
@@ -105,7 +147,7 @@ int main(int argc, char const *argv[])
             std::cout << "READ to be implemented...\n";
             break;
         case 3:
-            std::cout << "LIST to be implemented...\n";
+            listMessages(socketFileDescriptor);
             break;
         case 4:
             deleteMessage(socketFileDescriptor);
