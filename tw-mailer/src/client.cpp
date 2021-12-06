@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <limits>
+#include <vector>
 
 #include "libraries/CLI/CLI.hpp"
 #include "utility/socketUtils.hpp"
@@ -95,9 +96,12 @@ void sendMessage(int socketFileDescriptor)
         content.append(line).append("\n");
     }
     socketUtility::writeAll(socketFileDescriptor, string("SEND\n").append(sender).append("\n").append(receiver).append("\n").append(subject).append("\n").append(content));
-    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK) {
+    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+    {
         cout << "Message sent successfully!\n";
-    } else {
+    }
+    else
+    {
         cout << "There occured an error sending the message.\n";
     }
 }
@@ -110,14 +114,48 @@ void readMessage(int socketFileDescriptor)
     string messageId = to_string(readNumericValue());
 
     socketUtility::writeAll(socketFileDescriptor, string("READ\n").append(username).append("\n").append(messageId).append("\n"));
-    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+    string response = receiveResponse(socketFileDescriptor);
+    if (response.starts_with(RESPONSE_OK))
     {
-        cout << "Message read successfully!\n";
+        vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
+        printf("\n%-9s: %s\n", "Sender", lines.at(1).c_str());
+        printf("%-9s: %s\n", "Receiver", lines.at(2).c_str());
+        printf("%-9s: %s\n\n", "Subject", lines.at(3).c_str());
+        for (size_t i = 4; i < (lines.size() - 1); i++)
+        {
+            cout << lines.at(i) << endl;
+        }
+        cout << endl;
+        
     }
     else
     {
         cerr << "There was an error retrieving the message.\n";
     }
+}
+
+void printMessageTable(vector<string> *lines)
+{
+    // Header
+    for (auto i = 1; i <= 91; i++)
+        cout << '=';
+    printf("\n| %-4s | %-80s |\n", "ID", "Subject");
+    for (auto i = 1; i <= 91; i++)
+        cout << '-';
+    cout << endl;
+
+    // Content
+    for (size_t i = 2; i < lines->size(); i++)
+    {
+        printf("| %-4ld | %-80s |\n", i - 1, lines->at(i).c_str());
+    }
+
+    // Footer
+    for (auto i = 1; i <= 91; i++)
+    {
+        cout << '=';
+    }
+    cout << endl;
 }
 
 void listMessages(int socketFileDescriptor)
@@ -126,9 +164,19 @@ void listMessages(int socketFileDescriptor)
     string username = readUsername();
 
     socketUtility::writeAll(socketFileDescriptor, string("LIST\n").append(username).append("\n"));
-    if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
+
+    string response = receiveResponse(socketFileDescriptor);
+    if (response.starts_with(RESPONSE_OK))
     {
-        cout << "Message deleted successfully!\n";
+        vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
+        if (stoi(lines.at(1)) != 0)
+        {
+            printMessageTable(&lines);
+        }
+        else
+        {
+            cerr << "There are no messages to list or user does not exist.\n";
+        }
     }
     else
     {

@@ -207,7 +207,7 @@ void *clientCommunication(void *data)
       buffer[size] = '\0';
       printf("Message received: %s\n", buffer); // ignore error
 
-      if (send(*current_socket, "ERR\n", 3, 0) == -1)
+      if (send(*current_socket, "OK\nmarcel\nLukas\nErinnerung\nGeburtstag\n.\n", 39, 0) == -1)
       {
          perror("send answer failed");
          return NULL;
