@@ -1,3 +1,10 @@
+/*
+ * authors: Benedikt Schottleitner & Marcel Glavanits
+ * class: BIF DUAL 3
+ * file: client.cpp
+ * date: 13.12.21
+ */
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -15,6 +22,14 @@
 
 using namespace std;
 
+string receiveResponse(int socketFileDescriptor);
+
+/*
+ * Function connect for creating and initializing a socket and connecting to a given endpoint(IP-address + port).
+ * @param char* address: IPv4 address of the server
+ * @param int port: Port to connect to
+ * @return the socket file descriptor of the opened socket
+ */
 int connect(const char *address, int port)
 {
     auto socketFileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
@@ -39,9 +54,19 @@ int connect(const char *address, int port)
     }
 
     spdlog::debug("Connection with server {} established", inet_ntoa(socketAddress.sin_addr));
+
+    if (receiveResponse(socketFileDescriptor) == "CONNECTED\n")
+    {
+        cout << "Server is now ready to communicate!\n";
+    }
     return socketFileDescriptor;
 }
 
+/*
+ * Function receiveResponse for receiving a message and in case nothing is received, server connection has been closed and an error message is displayed.
+ * @param int socketFileDescriptor: the socket file descriptor
+ * @return a string of the received message
+ */
 string receiveResponse(int socketFileDescriptor)
 {
     string response = socketUtility::readAll(socketFileDescriptor, BUFFER_SIZE);
@@ -53,6 +78,10 @@ string receiveResponse(int socketFileDescriptor)
     return response;
 }
 
+/*
+ * Function readNumericValue for reading a numeric value from commandline.
+ * @return a numeric value which has been entered
+ */
 int readNumericValue()
 {
     int value;
@@ -66,6 +95,11 @@ int readNumericValue()
     return value;
 }
 
+/*
+ * Function readUsername for reading a valid username from commandline.
+ * Username can only include lower case letters, digits and must not be langer than 8 characters. 
+ * @return a valid username
+ */
 string readUsername()
 {
     string username = "";
@@ -82,12 +116,19 @@ string readUsername()
 void sendMessage(int socketFileDescriptor)
 {
     string sender, receiver, subject, content, line;
+
     cout << "Sender: ";
     sender = readUsername();
+    
     cout << "Receiver: ";
     receiver = readUsername();
-    cout << "Subject(max. 80 characters): ";
-    getline(cin, subject);
+    
+    while ((subject.size() > 80) || (subject.size() == 0))
+    {
+        cout << "Subject(max. 80 characters): ";
+        getline(cin, subject);
+    }
+    
     cout << "Message-Content(ends with dot): " << endl;
     while (line != ".")
     {
@@ -95,7 +136,9 @@ void sendMessage(int socketFileDescriptor)
         getline(cin, line);
         content.append(line).append("\n");
     }
+    
     socketUtility::writeAll(socketFileDescriptor, string("SEND\n").append(sender).append("\n").append(receiver).append("\n").append(subject).append("\n").append(content));
+    
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
         cout << "Message sent successfully!\n";
@@ -110,23 +153,24 @@ void readMessage(int socketFileDescriptor)
 {
     cout << "Please enter your username: ";
     string username = readUsername();
+    
     cout << "Message ID: ";
     string messageId = to_string(readNumericValue());
 
     socketUtility::writeAll(socketFileDescriptor, string("READ\n").append(username).append("\n").append(messageId).append("\n"));
     string response = receiveResponse(socketFileDescriptor);
+    
     if (response.starts_with(RESPONSE_OK))
     {
         vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
         printf("\n%-9s: %s\n", "Sender", lines.at(1).c_str());
         printf("%-9s: %s\n", "Receiver", lines.at(2).c_str());
         printf("%-9s: %s\n\n", "Subject", lines.at(3).c_str());
-        for (size_t i = 4; i < (lines.size() - 1); i++)
+        for (size_t i = 4; i < lines.size(); i++)
         {
             cout << lines.at(i) << endl;
         }
         cout << endl;
-        
     }
     else
     {
@@ -145,7 +189,7 @@ void printMessageTable(vector<string> *lines)
     cout << endl;
 
     // Content
-    for (size_t i = 2; i < lines->size(); i++)
+    for (size_t i = 1; i < lines->size(); i++)
     {
         printf("| %-4ld | %-80s |\n", i - 1, lines->at(i).c_str());
     }
@@ -166,10 +210,13 @@ void listMessages(int socketFileDescriptor)
     socketUtility::writeAll(socketFileDescriptor, string("LIST\n").append(username).append("\n"));
 
     string response = receiveResponse(socketFileDescriptor);
-    if (response.starts_with(RESPONSE_OK))
+    vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
+
+    if (response.starts_with(RESPONSE_ERR) || lines.size() == 0)
+        cerr << "There was an error retrieving the list of messages.\n";
+    try
     {
-        vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
-        if (stoi(lines.at(1)) != 0)
+        if (stoi(lines.at(0)) != 0)
         {
             printMessageTable(&lines);
         }
@@ -178,7 +225,7 @@ void listMessages(int socketFileDescriptor)
             cerr << "There are no messages to list or user does not exist.\n";
         }
     }
-    else
+    catch (const invalid_argument &e)
     {
         cerr << "There was an error retrieving the list of messages.\n";
     }
@@ -186,10 +233,11 @@ void listMessages(int socketFileDescriptor)
 
 void deleteMessage(int socketFileDescriptor)
 {
+    cout << "Username: ";
+    string sender = readUsername();
     cout << "Message ID: ";
-    int messageId;
-    messageId = readNumericValue();
-    socketUtility::writeAll(socketFileDescriptor, string("DEL\n").append(to_string(messageId)).append("\n"));
+    string messageId = to_string(readNumericValue());
+    socketUtility::writeAll(socketFileDescriptor, string("DEL\n").append(sender).append("\n").append(messageId).append("\n"));
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
         cout << "Message deleted successfully!\n";
@@ -254,6 +302,7 @@ int main(int argc, char const *argv[])
             cerr << "Unknown argument!\n";
             break;
         }
+        cout << endl;
     }
 
     close(socketFileDescriptor);
