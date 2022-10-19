@@ -14,7 +14,8 @@ int main(int argc, char** argv)
     std::string mailDirectory{ "mails" };
 
     app.add_option("-p,--port", port, "Port the server runs on")->required()->check(CLI::PositiveNumber);
-    app.add_option("-d, --directory-path", mailDirectory, "Directory the mails are saved in")->required()->check(CLI::ExistingDirectory);
+    // Create directory if it does not exist
+    app.add_option("-d, --directory-path", mailDirectory, "Directory the mails are saved in")->required();
 
     CLI11_PARSE(app, argc, argv);
 

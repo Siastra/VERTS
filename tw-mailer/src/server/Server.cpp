@@ -1,11 +1,15 @@
 #include "Server.hpp"
+#include "ServerCommunication.hpp"
 #include "Command.hpp"
+
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/wait.h>
 #include <string>
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <thread>
 
 //SIGNAL handling not implemented yet 
 
@@ -64,112 +68,39 @@ void Server::Run()
     Bind();
     SetOptions({ SocketOption::ReuseAddress, SocketOption::ReusePort });
     StartListening();
+    // pid_t wpid;
+    // int status = 0;
 
     while (!mAbortRequested)
     {
-        int newSocket{ -1 };
+        int communicationSocket{ -1 };
         std::cout << "Waiting for connections...\n";
         mAddressLength = sizeof(struct sockaddr_in);
-        if (!Accept(newSocket))
+        if (!Accept(communicationSocket))
             break;
 
-        std::cout << "Client connected from " << inet_ntoa(mClientAddress.sin_addr) << ":" << ntohs(mClientAddress.sin_port) << "\n";
-        ClientCommunication(newSocket);
+        auto handleClient = [this, communicationSocket]() {
+            std::cout << "Client connected from " << inet_ntoa(mClientAddress.sin_addr) << ":" << ntohs(mClientAddress.sin_port) << "\n";
+            ServerCommunication com(communicationSocket, std::string(inet_ntoa(mClientAddress.sin_addr)));
+            std::cout << "Client disconnected from " << inet_ntoa(mClientAddress.sin_addr) << ":" << ntohs(mClientAddress.sin_port) << "\n";
+            close(communicationSocket);
+        };
+
+        auto clientThread = std::make_unique<std::thread>(handleClient);
+        clientThread.get()->detach();
+
+        // if ((mPid = fork()) == 0)
+        // {
+        //     std::cout << "Client connected from " << inet_ntoa(mClientAddress.sin_addr) << ":" << ntohs(mClientAddress.sin_port) << "\n";
+        //     ServerCommunication com(communicationSocket, std::string(inet_ntoa(mClientAddress.sin_addr)));
+        //     std::cout << "Client disconnected from " << inet_ntoa(mClientAddress.sin_addr) << ":" << ntohs(mClientAddress.sin_port) << "\n";
+        //     close(communicationSocket);
+        //     exit(0);
+        // }
+        // close(communicationSocket);
     }
-}
-
-void Server::ClientCommunication(int& communicationSocket)
-{
-    int size;
-    char buffer[BUFFER];
-    SendData(communicationSocket, "CONNECTED\n");
-    do
-    {
-        size = recv(communicationSocket, buffer, BUFFER - 1, 0);
-        if (size == -1)
-        {
-            if (mAbortRequested)
-            {
-                perror("recv error after aborted");
-            }
-            else
-            {
-                perror("recv error");
-            }
-            break;
-        }
-
-        if (size == 0)
-        {
-            printf("Client closed remote socket\n"); // ignore error
-            break;
-        }
-
-        //Isolate command
-        std::string message = buffer;
-        const size_t commandEnd = message.find('\n');
-        const std::string command = message.substr(0, commandEnd);
-        message.erase(0, commandEnd + 1);
-
-
-        //Perform action depening on command
-        if (command == "SEND")
-        {
-            if (Command::Send(message))
-                SendData(communicationSocket, "OK\n");
-            else
-                SendData(communicationSocket, "ERR\n");
-        }
-        else if (command == "READ")
-        {
-            const std::string content = Command::Read(message);
-            std::cout << content << std::endl;
-            if (!content.empty())
-                SendData(communicationSocket, "OK\n" + content);
-            else
-                SendData(communicationSocket, "ERR\n");
-
-        }
-        else if (command == "LIST")
-        {
-            std::vector<std::string> mails = Command::List(message);
-            SendData(communicationSocket, std::to_string(mails.size()) + '\n');
-            if (mails.size() > 0)
-            {
-                std::string completeMessage{ "" };
-                for (const auto& mail : mails)
-                    completeMessage += mail + '\n';
-                SendData(communicationSocket, completeMessage);
-            }
-        }
-        else if (command == "DEL")
-        {
-            if (Command::Delete(message))
-                SendData(communicationSocket, "OK\n");
-            else
-                SendData(communicationSocket, "ERR\n");
-        }
-
-    } while (!Command::Quit(buffer) && !mAbortRequested);
-
-    // closes/frees the descriptor if not already
-    if (communicationSocket != -1)
-    {
-        if (shutdown(communicationSocket, SHUT_RDWR) == -1)
-            perror("shutdown new_socket");
-        if (close(communicationSocket) == -1)
-            perror("close new_socket");
-        communicationSocket = -1;
-    }
-}
-
-void Server::SendData(int& communicationSocket, const std::string& data)
-{
-    if (send(communicationSocket, data.c_str(), data.length(), 0) == -1)
-    {
-        perror("send failed");
-        exit(EXIT_FAILURE);
-    }
+    // wait for all child process to finish
+    // while ((wpid = wait(&status)) > 0);
 }
 
 void Server::SetOptions(std::initializer_list<SocketOption> options)

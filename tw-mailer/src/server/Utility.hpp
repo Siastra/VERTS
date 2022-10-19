@@ -1,4 +1,7 @@
 #include <string>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 std::string SplitAtFirstOccurence(std::string& str, const char c)
 {
@@ -12,7 +15,7 @@ bool ValidateUsername(const std::string& stringToValidate)
 {
     for (const auto& c : stringToValidate)
     {
-        if (isalpha(c) && c >= 'a' && c <= 'z')
+        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z'))
             continue;
         return false;
     }
@@ -28,4 +31,12 @@ std::string GenerateUniqueFilename(const std::string& filename)
     const std::string generatedFile = mkstemp(name) ? name : std::string();
     delete[] name;
     return generatedFile;
+}
+
+std::string SerializeTimePoint(const time_t& time, const std::string& format)
+{
+    auto tm = std::localtime(&time);
+    std::stringstream ss;
+    ss << std::put_time(tm, format.c_str());
+    return ss.str();
 }

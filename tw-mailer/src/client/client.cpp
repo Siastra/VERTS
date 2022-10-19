@@ -55,10 +55,6 @@ int connect(const char *address, int port)
 
     spdlog::debug("Connection with server {} established", inet_ntoa(socketAddress.sin_addr));
 
-    if (receiveResponse(socketFileDescriptor) == "CONNECTED\n")
-    {
-        cout << "Server is now ready to communicate!\n";
-    }
     return socketFileDescriptor;
 }
 
@@ -97,7 +93,7 @@ int readNumericValue()
 
 /*
  * Function readUsername for reading a valid username from commandline.
- * Username can only include lower case letters, digits and must not be langer than 8 characters. 
+ * Username can only include lower case letters, digits and must not be langer than 8 characters.
  * @return a valid username
  */
 string readUsername()
@@ -113,22 +109,71 @@ string readUsername()
     return username;
 }
 
+bool loginUser(int socketFileDescriptor)
+{
+    string user, password;
+    bool loggedIn = false;
+
+    while (!loggedIn)
+    {
+        cout << "Username: ";
+        user = readUsername();
+        password = stringUtility::getpass("Password: ",true);
+
+        socketUtility::writeAll(socketFileDescriptor,
+                                string("LOGIN\n").append(user).append("\n").append(password).append("\n"));
+
+        string response = receiveResponse(socketFileDescriptor);
+
+        if (response == RESPONSE_OK)
+        {
+            cout << "Logged in successfully!" << endl;
+            return true;
+        }
+        else if (response == "BLOCKED\n")
+        {
+            cout << "Invalid credentials! Your IP has now been blocked! Please try again later." << endl;
+            return false;
+        }
+        else
+        {
+            cout << "Invalid credentials!" << endl;
+            string input;
+            question:
+            cout << "Do you want to continue?(n/y)";
+            getline(cin, input);
+            if ((input == "no") || (input == "n"))
+            {
+                return false;
+            }
+            else if ((input == "yes") || (input == "y"))
+            {
+                continue;
+            }
+            else
+            {
+                cout << "Unrecognized string!" << endl;
+                goto question;
+            }
+            
+        }
+    }
+    return false;
+}
+
 void sendMessage(int socketFileDescriptor)
 {
-    string sender, receiver, subject, content, line;
+    string receiver, subject, content, line;
 
-    cout << "Sender: ";
-    sender = readUsername();
-    
     cout << "Receiver: ";
     receiver = readUsername();
-    
+
     while ((subject.size() > 80) || (subject.size() == 0))
     {
         cout << "Subject(max. 80 characters): ";
         getline(cin, subject);
     }
-    
+
     cout << "Message-Content(ends with dot): " << endl;
     while (line != ".")
     {
@@ -136,9 +181,9 @@ void sendMessage(int socketFileDescriptor)
         getline(cin, line);
         content.append(line).append("\n");
     }
-    
-    socketUtility::writeAll(socketFileDescriptor, string("SEND\n").append(sender).append("\n").append(receiver).append("\n").append(subject).append("\n").append(content));
-    
+
+    socketUtility::writeAll(socketFileDescriptor, string("SEND\n").append(receiver).append("\n").append(subject).append("\n").append(content));
+
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
         cout << "Message sent successfully!\n";
@@ -151,15 +196,12 @@ void sendMessage(int socketFileDescriptor)
 
 void readMessage(int socketFileDescriptor)
 {
-    cout << "Please enter your username: ";
-    string username = readUsername();
-    
     cout << "Message ID: ";
     string messageId = to_string(readNumericValue());
 
-    socketUtility::writeAll(socketFileDescriptor, string("READ\n").append(username).append("\n").append(messageId).append("\n"));
+    socketUtility::writeAll(socketFileDescriptor, string("READ\n").append(messageId).append("\n"));
     string response = receiveResponse(socketFileDescriptor);
-    
+
     if (response.starts_with(RESPONSE_OK))
     {
         vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
@@ -204,10 +246,7 @@ void printMessageTable(vector<string> *lines)
 
 void listMessages(int socketFileDescriptor)
 {
-    cout << "Please enter your username: ";
-    string username = readUsername();
-
-    socketUtility::writeAll(socketFileDescriptor, string("LIST\n").append(username).append("\n"));
+    socketUtility::writeAll(socketFileDescriptor, string("LIST\n"));
 
     string response = receiveResponse(socketFileDescriptor);
     vector<string> lines = stringUtility::splitStringByNewLine(response.c_str());
@@ -233,11 +272,9 @@ void listMessages(int socketFileDescriptor)
 
 void deleteMessage(int socketFileDescriptor)
 {
-    cout << "Username: ";
-    string sender = readUsername();
     cout << "Message ID: ";
     string messageId = to_string(readNumericValue());
-    socketUtility::writeAll(socketFileDescriptor, string("DEL\n").append(sender).append("\n").append(messageId).append("\n"));
+    socketUtility::writeAll(socketFileDescriptor, string("DEL\n").append(messageId).append("\n"));
     if (receiveResponse(socketFileDescriptor) == RESPONSE_OK)
     {
         cout << "Message deleted successfully!\n";
@@ -256,6 +293,7 @@ int main(int argc, char const *argv[])
     bool debug{false};
     int socketFileDescriptor;
     bool abort{false};
+    bool loggedIn{false};
 
     app.add_option("-a,--address", address, "IPv4 Address of the server")->required()->check(CLI::ValidIPV4);
     app.add_option("-p,--port", port, "Port of the server")->required()->check(CLI::PositiveNumber);
@@ -273,36 +311,64 @@ int main(int argc, char const *argv[])
     int selection = 0;
     while (!abort)
     {
-        // Input action
-        cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
-        cout << ">>";
-        selection = readNumericValue();
-
-        // Respective action is executed
-        switch (selection)
+        if (loggedIn)
         {
-        case 1:
-            sendMessage(socketFileDescriptor);
-            break;
-        case 2:
-            readMessage(socketFileDescriptor);
-            break;
-        case 3:
-            listMessages(socketFileDescriptor);
-            break;
-        case 4:
-            deleteMessage(socketFileDescriptor);
-            break;
-        case 5:
-            socketUtility::writeAll(socketFileDescriptor, string("QUIT\n"));
-            cout << "Quitting application...\n";
-            abort = true;
-            break;
-        default:
-            cerr << "Unknown argument!\n";
-            break;
+            // Input action
+            cout << "Please select your action: 1 - SEND, 2 - READ, 3 - LIST, 4 - DEL, 5- QUIT\n";
+            cout << ">>";
+            selection = readNumericValue();
+
+            // Respective action is executed
+            switch (selection)
+            {
+            case 1:
+                sendMessage(socketFileDescriptor);
+                break;
+            case 2:
+                readMessage(socketFileDescriptor);
+                break;
+            case 3:
+                listMessages(socketFileDescriptor);
+                break;
+            case 4:
+                deleteMessage(socketFileDescriptor);
+                break;
+            case 5:
+                socketUtility::writeAll(socketFileDescriptor, string("QUIT\n"));
+                cout << "Quitting application...\n";
+                abort = true;
+                break;
+            default:
+                cerr << "Unknown argument!\n";
+                break;
+            }
+            cout << endl;
         }
-        cout << endl;
+        else
+        {
+            // Input action
+            cout << "Please select your action: 1 - LOGIN, 2- QUIT\n";
+            cout << ">>";
+            selection = readNumericValue();
+
+            // Respective action is executed
+            switch (selection)
+            {
+            case 1:
+                if (loginUser(socketFileDescriptor))
+                    loggedIn = true;
+                break;
+            case 2:
+                socketUtility::writeAll(socketFileDescriptor, string("QUIT\n"));
+                cout << "Quitting application...\n";
+                abort = true;
+                break;
+            default:
+                cerr << "Unknown argument!\n";
+                break;
+            }
+            cout << endl;
+        }
     }
 
     close(socketFileDescriptor);

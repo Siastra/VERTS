@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string>
-#include <signal.h>
 
 #include <initializer_list>
 
@@ -28,20 +27,17 @@ public:
 private:
     bool Accept(int& communicationSocket);
     void Bind();
-    void SendData(int& communicationSocket, const std::string& data);
     void StartListening();
-    void ClientCommunication(int& communicationSocket);
     void SetOptions(std::initializer_list<SocketOption> options);
-
 
 private:
     static constexpr int MAX_WAITING_CONNECTIONS = 5;
-    static constexpr int BUFFER = 1024;
+    bool mAbortRequested;
 
     int mPort;
     int mSocket;
     socklen_t mAddressLength;
     struct sockaddr_in mAddress;
     struct sockaddr_in mClientAddress;
-    bool mAbortRequested;
+    pid_t mPid;
 };
